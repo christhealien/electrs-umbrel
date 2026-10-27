@@ -1,0 +1,130 @@
+/* Electrs for Umbrel: monochrome theme, matching Blake2b ASIC Control, DATUM Gateway and Mempool.
+   Black page, white text, greys for everything else. Only states keep colour (green = running).
+   Always dark, whatever the device prefers. Loaded after the app's own styles (see tools/patch_ui.py). */
+
+html,
+body,
+#app {
+  background: #000 !important;
+  color: #f4f4f4;
+  color-scheme: dark;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+body {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px) !important;
+  background-size: 32px 32px;
+  background-attachment: fixed;
+}
+
+/* the page container the app paints light by default */
+.bg-slate-100,
+.bg-white,
+.dark\:bg-neutral-800 {
+  background-color: transparent !important;
+}
+
+/* text: everything readable on black */
+h3,
+.text-gray-800,
+.text-neutral-900,
+.text-slate-800,
+.dark\:text-white,
+.dark\:text-gray-200,
+.dark\:text-neutral-300,
+.dark\:text-slate-300 {
+  color: #f4f4f4 !important;
+}
+.text-gray-500,
+.text-muted {
+  color: #a0a0a0 !important;
+}
+h3.text-5xl {
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+a {
+  color: #f4f4f4;
+  text-decoration-color: #6b6b6b;
+}
+
+/* the app icon */
+img.rounded-3xl {
+  border-radius: 22px;
+  border: 1px solid #2c2c2c;
+}
+
+/* panels and copy boxes */
+.border-dashed,
+.border-gray-200,
+.dark\:border-gray-600 {
+  border: 1px solid #2c2c2c !important;
+  border-radius: 10px;
+}
+.dark\:bg-neutral-900,
+.bg-neutral-900 {
+  background-color: #0e0e0e !important;
+}
+.font-mono {
+  font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "DejaVu Sans Mono", monospace;
+}
+.border-t,
+.border-gray-300,
+.dark\:border-slate-200 {
+  border-color: #2c2c2c !important;
+}
+
+/* the Local / Tor switch: a dark track with a white pill, like the active tab in the other apps */
+.bg-slate-200,
+.dark\:bg-zinc-700 {
+  background-color: #1a1a1a !important;
+  border: 1px solid #2c2c2c;
+}
+.bg-umbrel {
+  background-color: #f4f4f4 !important;
+  box-shadow: none !important;
+}
+.text-white.duration-500 {
+  color: #000 !important;
+}
+button.rounded-full {
+  border-radius: 10px;
+}
+.rounded-full.p-1 {
+  border-radius: 12px;
+}
+.bg-umbrel.rounded-full {
+  border-radius: 9px;
+}
+
+/* sync progress: a white bar on a dark track */
+.bg-gray-200,
+.dark\:bg-neutral-700 {
+  background-color: #1a1a1a !important;
+}
+.bg-blue-500,
+.progressbar {
+  background-color: #f4f4f4 !important;
+}
+.bg-green-400,
+.bg-green-500 {
+  background-color: #3dd68c !important;
+}
+.text-green-500 {
+  color: #3dd68c !important;
+}
+
+/* QR code stays black on white so phones can read it */
+.bg-white.rounded-lg {
+  background-color: #fff !important;
+  border-radius: 12px;
+}
+
+/* the loading screen: no Umbrel branding */
+.loading-footer {
+  display: none !important;
+}
+.loading-placeholder {
+  background: #1a1a1a !important;
+}
