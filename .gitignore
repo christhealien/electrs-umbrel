@@ -1,0 +1,4 @@
+*.pyc
+__pycache__/
+blake2b-electrs/data/**
+!blake2b-electrs/data/**/.gitkeep

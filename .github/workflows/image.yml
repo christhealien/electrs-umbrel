@@ -1,0 +1,126 @@
+name: image
+# Push a tag like electrs-v1.0.1 to build the Electrs connection-page image (amd64 + arm64), publish it to
+# ghcr.io/<owner>/blake2b-electrs-ui, then copy the app folder into the store repo christhealien/blake2b
+# (needs the STORE_TOKEN secret; without it the store's own sync picks the release up).
+# The source is retropex/umbrel-electrs (UI_REF) with this repo's theme applied on top. The Electrs server itself is
+# Horizon's image named in blake2b-electrs/docker-compose.yml.
+on:
+  push:
+    tags: ["electrs-v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Image version (e.g. 1.0.1)"
+        required: true
+permissions:
+  contents: read
+  packages: write
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  UI_REPO: retropex/umbrel-electrs
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      ref: ${{ steps.v.outputs.ref }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -eu
+          if [ "$EVENT" = "workflow_dispatch" ]; then v="$INPUT_VERSION"; else v="${GITHUB_REF_NAME#electrs-v}"; fi
+          echo "$v" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "bad version: $v" >&2; exit 1; }
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "ref=$(tr -d '[:space:]' < UI_REF)" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: ours
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ env.UI_REPO }}
+          ref: ${{ needs.prepare.outputs.ref }}
+          path: up
+      - name: Apply the theme
+        run: python3 -I ours/tools/patch_ui.py up
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: up
+          file: ours/Dockerfile
+          platforms: linux/${{ matrix.arch }}
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/blake2b-electrs-ui:${{ needs.prepare.outputs.version }}-${{ matrix.arch }}
+          cache-from: type=gha,scope=electrs-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=electrs-${{ matrix.arch }}
+
+  manifest:
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Join the amd64 and arm64 images
+        env:
+          IMG: ghcr.io/${{ github.repository_owner }}/blake2b-electrs-ui
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -eu
+          docker buildx imagetools create -t "$IMG:$VERSION" -t "$IMG:latest" "$IMG:$VERSION-amd64" "$IMG:$VERSION-arm64"
+
+  store:
+    needs: [prepare, manifest]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Update the store repo
+        env:
+          STORE_TOKEN: ${{ secrets.STORE_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -eu
+          if [ -z "$STORE_TOKEN" ]; then echo "::notice::STORE_TOKEN is not set: the store's own sync-apps workflow will pick this release up"; exit 0; fi
+          auth="$(printf 'x-access-token:%s' "$STORE_TOKEN" | base64 -w0)"
+          echo "::add-mask::$auth"
+          if ! git -c "http.extraHeader=Authorization: Basic $auth" clone "https://github.com/$OWNER/blake2b.git" /tmp/store; then
+            echo "::warning::Could not clone $OWNER/blake2b (check STORE_TOKEN). The store's sync-apps workflow will still pick this release up."
+            exit 0
+          fi
+          rm -rf /tmp/store/blake2b-electrs
+          cp -r blake2b-electrs /tmp/store/
+          cd /tmp/store
+          git add -A
+          git diff --cached --quiet && { echo "store already up to date"; exit 0; }
+          git -c user.name=github-actions -c user.email=actions@users.noreply.github.com commit -m "blake2b-electrs $VERSION"
+          branch="$(git rev-parse --abbrev-ref HEAD)"
+          if ! git -c "http.extraHeader=Authorization: Basic $auth" push origin "HEAD:$branch"; then
+            echo "::warning::Push to $OWNER/blake2b was refused (token needs Contents: write). The store's sync-apps workflow will still pick this release up."
+            exit 0
+          fi
