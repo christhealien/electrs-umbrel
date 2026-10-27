@@ -128,3 +128,13 @@ button.rounded-full {
 .loading-placeholder {
   background: #1a1a1a !important;
 }
+
+/* status dot uses the same green as the "Running" text */
+circle[fill='#00CD98' i] {
+  fill: #3dd68c;
+}
+/* the mark in the middle of the QR code */
+.qr-logo {
+  border-radius: 10px;
+  background: #000;
+}
