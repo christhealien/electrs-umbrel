@@ -1,0 +1,93 @@
+name: server
+# Push a tag like electrs-server-v0.10.10-blake2b.4 to build the patched Electrs server image (amd64 + arm64) and
+# publish it to ghcr.io/<owner>/blake2b-electrs-server. The source is bitcoin-blake/electrs at the commit named in
+# server/ELECTRS_REF, with tools/patch_server.py applied.
+on:
+  push:
+    tags: ["electrs-server-v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Image version (e.g. 0.10.10-blake2b.4)"
+        required: true
+permissions:
+  contents: read
+  packages: write
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  SRC_REPO: bitcoin-blake/electrs
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      ref: ${{ steps.v.outputs.ref }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -eu
+          if [ "$EVENT" = "workflow_dispatch" ]; then v="$INPUT_VERSION"; else v="${GITHUB_REF_NAME#electrs-server-v}"; fi
+          echo "$v" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?$' || { echo "bad version: $v" >&2; exit 1; }
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "ref=$(tr -d '[:space:]' < server/ELECTRS_REF)" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: ours
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ env.SRC_REPO }}
+          ref: ${{ needs.prepare.outputs.ref }}
+          path: up
+      - name: Advertise NODE_BLAKE2B
+        run: python3 -I ours/tools/patch_server.py up
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: up
+          file: ours/server/Dockerfile
+          platforms: linux/${{ matrix.arch }}
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/blake2b-electrs-server:${{ needs.prepare.outputs.version }}-${{ matrix.arch }}
+          cache-from: type=gha,scope=electrs-server-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=electrs-server-${{ matrix.arch }}
+
+  manifest:
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Join the amd64 and arm64 images
+        env:
+          IMG: ghcr.io/${{ github.repository_owner }}/blake2b-electrs-server
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -eu
+          docker buildx imagetools create -t "$IMG:$VERSION" "$IMG:$VERSION-amd64" "$IMG:$VERSION-arm64"
